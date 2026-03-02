@@ -15,7 +15,8 @@ Version : 2.0.0
 import pyshark
 from optparse import OptionParser
 import os, sys
-from flask import Flask, render_template, request
+from flask import Flask, render_template, request, jsonify
+import json
 from flask_socketio import SocketIO, emit
 from threading import Thread, Event
 import sqlite3
@@ -224,6 +225,44 @@ socketio = SocketIO(app)
 @app.route('/')
 def home():
     return render_template('home.html')
+
+@app.route('/mnc_share')
+def mnc_share():
+    # Load MCC/MNC -> (network, country) lookup
+    with open('mcc-mnc.json', 'r', encoding='utf-8') as fh:
+        mnc_data = json.load(fh)
+    mnc_lookup = {}
+    for entry in mnc_data['data']:
+        mcc = str(entry['mcc']).zfill(3)
+        mnc = str(entry['mnc']).zfill(2)
+        network = entry.get('network') or entry.get('country', 'Unknown')
+        country = entry.get('country', '')
+        mnc_lookup[(mcc, mnc)] = (network, country)
+        mnc_lookup[(mcc, str(entry['mnc']).zfill(3))] = (network, country)
+
+    try:
+        conn = sqlite3.connect('database/imsi.db')
+        rows = conn.execute(
+            'SELECT mcc, mnc, COUNT(*) AS cnt FROM imsi_data GROUP BY mcc, mnc ORDER BY cnt DESC'
+        ).fetchall()
+        conn.close()
+    except Exception:
+        rows = []
+
+    labels, counts = [], []
+    for mcc_raw, mnc_raw, cnt in rows:
+        mcc = str(mcc_raw).zfill(3)
+        mnc = str(mnc_raw).zfill(2)
+        entry = mnc_lookup.get((mcc, mnc))
+        if entry:
+            network, country = entry
+            label = f"{network} ({country})" if country else network
+        else:
+            label = f"MCC {mcc} / MNC {mnc}"
+        labels.append(label)
+        counts.append(cnt)
+
+    return jsonify({'labels': labels, 'counts': counts})
 
 @app.route('/sms/')
 def sms():

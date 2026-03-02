@@ -100,6 +100,32 @@ python3 GsmEvil.py --host=localhost
 ```
 Open localhost or 127.0.0.1 in your favorite browser and use now.
 
+# MNO Market Share Analysis
+
+Operator names and countries are resolved using `mcc-mnc.json`, which maps every `(MCC, MNC)` pair to a network name and country.
+
+### Standalone plot
+
+`plot_mnc_market_share.py` generates a pie chart of operator market share from the captured data in `database/imsi.db`.
+
+```
+pip install matplotlib
+python plot_mnc_market_share.py
+```
+
+The chart is saved to `mnc_market_share.png` and displayed interactively. Operators with less than 2 % share are grouped into an *Other* slice (when more than 6 operators are present). Each label shows the network name and country.
+
+### Live dashboard (IMSI page)
+
+The IMSI Sniffer page (`/imsi`) includes an **MNO Market Share** pie chart alongside the existing *Devices by Country* and *Activity Over Time* charts. It is populated on page load via the `/mnc_share` API endpoint and refreshes automatically as new IMSI records arrive.
+
+The `/mnc_share` endpoint is also available directly:
+
+```
+GET /mnc_share
+→ { "labels": ["Vodafone (Netherlands)", ...], "counts": [73, ...] }
+```
+
 # Requirements
 linux operating system (kali linux)
 [rtl-sdr (RTL2832U)](https://osmocom.org/projects/sdr/wiki/rtl-sdr) with antenna (less than 15$) or [HackRF](https://greatscottgadgets.com/hackrf/) 

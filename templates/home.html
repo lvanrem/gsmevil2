@@ -34,12 +34,99 @@
 		<a href="/imsi" type="button" style="background-color:#33304b!important;" class="btn btn-primary">Imsi Sniffer</a>
 		<a herf="/sms" type="button" style="background-color:#33304b!important;" class="btn btn-primary">Sms Sniffer</a>
 	</div>
+	<!-- MNC Market Share Dashboard -->
+	<div class="container" style="margin-top: 30px; max-width: 520px;">
+		<div class="card" style="background-color:#2a2840; border:1px solid #3d3a5c; border-radius:10px;">
+			<div class="card-body">
+				<h5 class="card-title text-center" style="color:#c8c6df; font-size:0.95rem; letter-spacing:0.05em;">MNO MARKET SHARE</h5>
+				<div style="position:relative; height:300px;">
+					<canvas id="mncPieChart"></canvas>
+				</div>
+				<p id="mncTotal" class="text-center mb-0" style="color:#888; font-size:0.8rem; margin-top:6px;"></p>
+			</div>
+		</div>
+	</div>
+
 	<div  class="text-center" style="margin-top: 20px">
 		<a href="https://www.facebook.com/ninjhacks" target="blank" style="width: 54px;margin-right: 3px;color: #ffffff;" type="button" role="button"><i class="fab fa-facebook-f"></i></a>
 		<a href="https://twitter.com/ninjhacks" target="blank" style="width: 54px;margin-right: 3px;color: #ffffff;" type="button" role="button"><i class="fab fa-twitter"></i></a>
 		<a href="https://discord.gg/ninjhacks" target="blank" style="width: 54px;margin-right: 3px;color: #ffffff;" type="button" role="button"><i class="fab fa-discord"></i></a>
 		<a href="https://github.com/ninjhacks/" target="blank" style="width: 54px;color: #ffffff;" type="button" role="button"><i class="fab fa-github"></i></a>
 	</div>
+	<!-- Chart.js -->
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+	<script>
+		const COLORS = [
+			'#6c63ff','#f06292','#4db6ac','#ffb74d','#81c784',
+			'#64b5f6','#e57373','#ba68c8','#fff176','#4dd0e1',
+			'#a1887f','#90a4ae','#ff8a65','#aed581','#f48fb1'
+		];
+		const THRESHOLD_PCT = 2.0;
+
+		fetch('/mnc_share')
+			.then(r => r.json())
+			.then(data => {
+				const total = data.counts.reduce((a, b) => a + b, 0);
+				if (total === 0) return;
+
+				// Group small slices into "Other"
+				let mainLabels = [], mainCounts = [], otherCount = 0;
+				data.labels.forEach((lbl, i) => {
+					const pct = data.counts[i] / total * 100;
+					if (pct < THRESHOLD_PCT && data.labels.length > 6) {
+						otherCount += data.counts[i];
+					} else {
+						mainLabels.push(lbl);
+						mainCounts.push(data.counts[i]);
+					}
+				});
+				if (otherCount > 0) {
+					mainLabels.push('Other (< ' + THRESHOLD_PCT + '%)');
+					mainCounts.push(otherCount);
+				}
+
+				const bgColors = mainLabels.map((_, i) => COLORS[i % COLORS.length]);
+
+				new Chart(document.getElementById('mncPieChart'), {
+					type: 'pie',
+					data: {
+						labels: mainLabels,
+						datasets: [{
+							data: mainCounts,
+							backgroundColor: bgColors,
+							borderColor: '#1e1c2e',
+							borderWidth: 2
+						}]
+					},
+					options: {
+						responsive: true,
+						maintainAspectRatio: false,
+						plugins: {
+							legend: {
+								position: 'right',
+								labels: {
+									color: '#c8c6df',
+									font: { size: 11 },
+									boxWidth: 14,
+									padding: 8
+								}
+							},
+							tooltip: {
+								callbacks: {
+									label: ctx => {
+										const pct = (ctx.parsed / total * 100).toFixed(1);
+										return ` ${ctx.label}: ${ctx.parsed} (${pct}%)`;
+									}
+								}
+							}
+						}
+					}
+				});
+
+				document.getElementById('mncTotal').textContent = 'Total captures: ' + total.toLocaleString();
+			});
+	</script>
+
 	<footer class="page-footer font-small" style="  position: absolute;bottom: 0;width: 100%;">
 		<div class="footer-copyright text-center py-3">© 2022
 		<a href="https://ninjhacks.com"> GsmEvil</a>
