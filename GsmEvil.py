@@ -97,6 +97,7 @@ class ImsiEvil:
             if(self.imsi != data[1]):
                 self.save_data()
             else:
+                self.imsi_id = data[0]  # record already exists, use its id
                 if (self.tmsi != data[2]) & (self.tmsi != ''): #Check if tmsi is different than update in file db
                     self.update_data(data[0],self.tmsi)
         else:
