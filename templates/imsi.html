@@ -69,7 +69,17 @@
         </div>
     </div>
     <div style="flex: 2; min-width: 380px; background: rgba(255,255,255,0.05); border-radius: 8px; padding: 16px;">
-        <h5 style="color: #aaa; text-align: center; margin-bottom: 12px; font-family: Roboto, sans-serif; letter-spacing: 1px;">ACTIVITY OVER TIME</h5>
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+            <h5 style="color: #aaa; margin: 0; font-family: Roboto, sans-serif; letter-spacing: 1px;">ACTIVITY OVER TIME</h5>
+            <select id="timeframeSelect" onchange="onTimeframeChange(this.value)" style="background: rgba(255,255,255,0.08); color: #ccc; border: 1px solid rgba(255,255,255,0.15); border-radius: 4px; padding: 3px 8px; font-size: 12px; cursor: pointer; outline: none;">
+                <option value="1h">Last Hour</option>
+                <option value="6h">Last 6 Hours</option>
+                <option value="24h" selected>Last 24 Hours</option>
+                <option value="7d">Last 7 Days</option>
+                <option value="30d">Last 30 Days</option>
+                <option value="all">All Time</option>
+            </select>
+        </div>
         <div style="position: relative; height: 260px;">
             <canvas id="activityLineChart"></canvas>
         </div>
@@ -242,8 +252,8 @@
         }
 
         // ── Chart state ──────────────────────────────────────────────
-        var countryMap = {};   // country name -> count
-        var activityMap = {};  // "HH:MM" bucket -> count
+        var countryMap = {};     // country name -> count
+        var allDetections = [];  // array of Date objects (one per detection)
 
         var CHART_COLORS = [
             '#e74c3c','#3498db','#2ecc71','#f39c12','#9b59b6',
@@ -277,6 +287,77 @@
             }
         });
 
+        // ── Timeframe config ─────────────────────────────────────────
+        // bucketMs: how wide each bar is; windowMs: null = all time
+        var TIMEFRAMES = {
+            '1h':  { windowMs: 1  * 60*60*1000, bucketMs: 1*60*1000,      fmt: fmtHHMM },
+            '6h':  { windowMs: 6  * 60*60*1000, bucketMs: 5*60*1000,      fmt: fmtHHMM },
+            '24h': { windowMs: 24 * 60*60*1000, bucketMs: 30*60*1000,     fmt: fmtHHMM },
+            '7d':  { windowMs: 7  * 24*60*60*1000, bucketMs: 60*60*1000,  fmt: fmtDayHour },
+            '30d': { windowMs: 30 * 24*60*60*1000, bucketMs: 24*60*60*1000, fmt: fmtDate },
+            'all': { windowMs: null,               bucketMs: 24*60*60*1000, fmt: fmtDate }
+        };
+        var selectedTimeframe = '24h';
+
+        function pad2(n) { return n < 10 ? '0' + n : '' + n; }
+        function fmtHHMM(d)    { return pad2(d.getHours()) + ':' + pad2(d.getMinutes()); }
+        function fmtDayHour(d) { return ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()] + ' ' + pad2(d.getHours()) + 'h'; }
+        function fmtDate(d)    { return (d.getMonth()+1) + '/' + d.getDate() + '/' + d.getFullYear(); }
+
+        // Parse server timestamp format: "HH:MM:SS YYYY-MM-DD"
+        function parseTimestamp(str) {
+            if (!str || typeof str !== 'string') return null;
+            var parts = str.split(' ');
+            if (parts.length < 2) return null;
+            return new Date(parts[1] + 'T' + parts[0]);
+        }
+
+        function rebuildActivityChart() {
+            var tf = TIMEFRAMES[selectedTimeframe];
+            var now = new Date();
+            var cutoff = tf.windowMs ? new Date(now.getTime() - tf.windowMs) : null;
+
+            var filtered = cutoff
+                ? allDetections.filter(function(d) { return d >= cutoff; })
+                : allDetections.slice();
+
+            if (filtered.length === 0) {
+                activityChart.data.labels = [];
+                activityChart.data.datasets[0].data = [];
+                activityChart.update();
+                return;
+            }
+
+            var bucketMs = tf.bucketMs;
+            var rangeStart = cutoff ? cutoff : new Date(Math.min.apply(null, filtered));
+            // Floor rangeStart to bucket boundary
+            var startMs = Math.floor(rangeStart.getTime() / bucketMs) * bucketMs;
+            var endMs   = Math.floor(now.getTime() / bucketMs) * bucketMs;
+
+            // Build ordered bucket keys with zero fill (guarantees gaps show as 0)
+            var buckets = {};
+            for (var t = startMs; t <= endMs; t += bucketMs) {
+                buckets[t] = 0;
+            }
+
+            filtered.forEach(function(d) {
+                var key = Math.floor(d.getTime() / bucketMs) * bucketMs;
+                if (Object.prototype.hasOwnProperty.call(buckets, key)) {
+                    buckets[key]++;
+                }
+            });
+
+            var keys = Object.keys(buckets).sort(function(a, b) { return a - b; });
+            activityChart.data.labels = keys.map(function(k) { return tf.fmt(new Date(parseInt(k))); });
+            activityChart.data.datasets[0].data = keys.map(function(k) { return buckets[k]; });
+            activityChart.update();
+        }
+
+        function onTimeframeChange(value) {
+            selectedTimeframe = value;
+            rebuildActivityChart();
+        }
+
         function updatePieChart() {
             pieChart.data.labels = Object.keys(countryMap);
             pieChart.data.datasets[0].data = Object.values(countryMap);
@@ -289,23 +370,18 @@
             pieChart.update();
         }
 
-        function updateActivityChart() {
-            var sorted = Object.keys(activityMap).sort();
-            activityChart.data.labels = sorted;
-            activityChart.data.datasets[0].data = sorted.map(function(k){ return activityMap[k]; });
-            activityChart.update();
-        }
-
         function recordChartData(mcc, timeStr) {
             // Country pie
             var country = mccToCountryName(mcc);
             countryMap[country] = (countryMap[country] || 0) + 1;
             updatePieChart();
 
-            // Activity over time – bucket by minute (HH:MM)
-            var bucket = typeof timeStr === 'string' ? timeStr.substring(0, 5) : '??:??';
-            activityMap[bucket] = (activityMap[bucket] || 0) + 1;
-            updateActivityChart();
+            // Activity timeline
+            var ts = parseTimestamp(timeStr);
+            if (ts && !isNaN(ts.getTime())) {
+                allDetections.push(ts);
+                rebuildActivityChart();
+            }
         }
 
         var socket = io();
