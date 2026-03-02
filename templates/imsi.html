@@ -21,6 +21,7 @@
     <script type="text/javascript" src="{{ url_for('static', filename='./js/bootstrap.js') }}"></script>
 	<script type="text/javascript" src="{{ url_for('static', filename='./js/bootstrap-table.js') }}"></script>
     <script src="{{ url_for('static', filename='./js/socket.io.js') }}"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 
     <!--  Just for demo purpose, do not include in your project     -->
     <script type="text/javascript" src="{{ url_for('static', filename='./js/demo/gsdk-switch.js') }}"></script>
@@ -58,6 +59,23 @@
         </table>
     </div>
 </div>
+
+<!-- Charts Section -->
+<div style="background: radial-gradient(ellipse at center, #323049 0%, #212030 100%); padding: 20px 30px 30px; display: flex; gap: 24px; flex-wrap: wrap;">
+    <div style="flex: 1; min-width: 280px; background: rgba(255,255,255,0.05); border-radius: 8px; padding: 16px;">
+        <h5 style="color: #aaa; text-align: center; margin-bottom: 12px; font-family: Roboto, sans-serif; letter-spacing: 1px;">DEVICES BY COUNTRY</h5>
+        <div style="position: relative; height: 260px;">
+            <canvas id="countryPieChart"></canvas>
+        </div>
+    </div>
+    <div style="flex: 2; min-width: 380px; background: rgba(255,255,255,0.05); border-radius: 8px; padding: 16px;">
+        <h5 style="color: #aaa; text-align: center; margin-bottom: 12px; font-family: Roboto, sans-serif; letter-spacing: 1px;">ACTIVITY OVER TIME</h5>
+        <div style="position: relative; height: 260px;">
+            <canvas id="activityLineChart"></canvas>
+        </div>
+    </div>
+</div>
+
 <div class="fixed-plugin" style="top: 300px">
     <div class="dropdown open">
         <a href="#" data-toggle="dropdown">
@@ -218,6 +236,78 @@
             return MCC_COUNTRY[code] ? MCC_COUNTRY[code] + ' (' + mcc + ')' : mcc;
         }
 
+        function mccToCountryName(mcc) {
+            var code = parseInt(mcc);
+            return MCC_COUNTRY[code] || ('MCC ' + mcc);
+        }
+
+        // ── Chart state ──────────────────────────────────────────────
+        var countryMap = {};   // country name -> count
+        var activityMap = {};  // "HH:MM" bucket -> count
+
+        var CHART_COLORS = [
+            '#e74c3c','#3498db','#2ecc71','#f39c12','#9b59b6',
+            '#1abc9c','#e67e22','#27ae60','#c0392b','#2980b9',
+            '#8e44ad','#16a085','#d35400','#7f8c8d','#f1c40f'
+        ];
+
+        var pieChart = new Chart(document.getElementById('countryPieChart'), {
+            type: 'pie',
+            data: { labels: [], datasets: [{ data: [], backgroundColor: CHART_COLORS, borderColor: 'rgba(0,0,0,0.4)', borderWidth: 1 }] },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'right', labels: { color: '#ccc', font: { size: 11 }, boxWidth: 14 } }
+                }
+            }
+        });
+
+        var activityChart = new Chart(document.getElementById('activityLineChart'), {
+            type: 'bar',
+            data: { labels: [], datasets: [{ label: 'Detections', data: [], backgroundColor: 'rgba(231,76,60,0.7)', borderColor: '#e74c3c', borderWidth: 1, borderRadius: 3 }] },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { ticks: { color: '#aaa', maxRotation: 45, font: { size: 10 } }, grid: { color: 'rgba(255,255,255,0.06)' } },
+                    y: { ticks: { color: '#aaa', precision: 0 }, grid: { color: 'rgba(255,255,255,0.06)' }, beginAtZero: true }
+                }
+            }
+        });
+
+        function updatePieChart() {
+            pieChart.data.labels = Object.keys(countryMap);
+            pieChart.data.datasets[0].data = Object.values(countryMap);
+            var n = pieChart.data.labels.length;
+            pieChart.data.datasets[0].backgroundColor = CHART_COLORS.concat(
+                Array.from({length: Math.max(0, n - CHART_COLORS.length)}, function(_,i){
+                    return 'hsl(' + (i * 47) % 360 + ',60%,55%)';
+                })
+            ).slice(0, n);
+            pieChart.update();
+        }
+
+        function updateActivityChart() {
+            var sorted = Object.keys(activityMap).sort();
+            activityChart.data.labels = sorted;
+            activityChart.data.datasets[0].data = sorted.map(function(k){ return activityMap[k]; });
+            activityChart.update();
+        }
+
+        function recordChartData(mcc, timeStr) {
+            // Country pie
+            var country = mccToCountryName(mcc);
+            countryMap[country] = (countryMap[country] || 0) + 1;
+            updatePieChart();
+
+            // Activity over time – bucket by minute (HH:MM)
+            var bucket = typeof timeStr === 'string' ? timeStr.substring(0, 5) : '??:??';
+            activityMap[bucket] = (activityMap[bucket] || 0) + 1;
+            updateActivityChart();
+        }
+
         var socket = io();
         socket.emit('imsi_data', 'get')
         socket.on('sniffers', msg => sniffer_switch(msg))
@@ -249,6 +339,7 @@
                 time: msg[7]
             };
             $('#fresh-table').bootstrapTable('prepend', row);
+            recordChartData(msg[3], msg[7]);
         }
 
         $().ready(function(){
