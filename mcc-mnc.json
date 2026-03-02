@@ -9700,6 +9700,14 @@
       "network": "Wilkes Cellular Inc."
     },
     {
+      "mcc": "311",
+      "mnc": "480",
+      "iso": "us",
+      "country": "United States",
+      "countryCode": "1",
+      "network": "Verizon Wireless"
+    },
+    {
       "mcc": "310",
       "mnc": "150",
       "iso": "us",
